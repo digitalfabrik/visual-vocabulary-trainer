@@ -28,7 +28,10 @@ schema_view = get_schema_view(
 )
 # router for dynmaic url patterns
 router = routers.DefaultRouter()
-router.register(r"disciplines", views.DisciplineViewSet, "disciplines")
+#router.register(r"disciplines/$", views.DisciplineViewSet, "disciplines")
+router.register(
+    r"disciplines(?:/(?P<group_id>[\d+&]+))?", views.DisciplineViewSet, "disciplines", #(?:/(?P<username>[-\w]+))?
+)
 router.register(
     r"training_set/(?P<discipline_id>[0-9]+)", views.TrainingSetViewSet, "training_set"
 )
@@ -39,6 +42,7 @@ router.register(
 
 urlpatterns = [
     path("", views.redirect_view, name="redirect"),
+    path("public_upload", views.public_upload, name="public_upload"),
     path("api/", include(router.urls)),
     url(
         r"^swagger(?P<format>\.json|\.yaml)$",

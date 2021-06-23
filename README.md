@@ -14,6 +14,14 @@ GET /api/disciplines/ HTTP/1.1
 Host: lunes.tuerantuer.org
 Content-Type: application/json
 ```
+The default endpoint delivers all disciplines created by Lunes administrators. Optionally, group ids can be passed as well (multiple ids devided by `&`):
+```http
+GET /api/disciplines/[[GROUP_ID]&[GROUP_ID]&[...]] HTTP/1.1
+Host: lunes.tuerantuer.org
+Content-Type: application/json
+```
+The request will return all disciplines either created by Lunes administrators or by one of the passed user groups.
+
 ### Response
 ```javascript
 [
@@ -22,6 +30,7 @@ Content-Type: application/json
         "title": String,                // title of discipline
         "description": String,          // description of discipline 
         "icon": String,                 // URL to image
+        "created_by": Integer           // Creator group id, null if created by admin 
         "total_training_sets": Integer  // # of training sets
     },
     [...]   // repeats for available disciplines
@@ -61,15 +70,15 @@ Content-Type: application/json
 ```javascript
 [
     {
-        "id": Integer,          // ID of training set
-        "word": String,         // primary correct answer
-        "article": String,      // article (german grammer) belonging to the item
-        "audio": String,        // URL to (converted) audio file
-        "word_type": String,    // Word type of document: Nomen, Verb, Adjektiv
+        "id": Integer,              // ID of training set
+        "word": String,             // primary correct answer
+        "article": Integer,         // ID of article (german grammer) belonging to the item (1:Der, 2:Die, 3:Das, 4:Die (Plural))
+        "audio": String,            // URL to (converted) audio file
+        "word_type": String,        // Word type of document: Nomen, Verb, Adjektiv
         "alternatives": [
             {
-                "alt_word": String, //Alternative word
-                "article": String   //Article of alternative word
+                "alt_word": String,         // Alternative word
+                "article": Integer,         // ID of article (german grammer) belonging to the item (1:Der, 2:Die, 3:Das, 4:Die (Plural))
             },
             [...]   // repeats for available alternatives
         ],

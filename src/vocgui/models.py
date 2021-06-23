@@ -4,18 +4,22 @@ Models for the UI
 import os
 from pathlib import Path
 from django.db import models
-from django.contrib.auth.models import Group
+from django.contrib.auth.models import User, Group
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.db.models.deletion import CASCADE
 from ordered_model.models import OrderedModel
 from PIL import Image, ImageFilter
 from pydub import AudioSegment
 from django.core.files import File
 from django.utils.translation import ugettext_lazy as _
+from django.utils.html import mark_safe
 from .validators import (
     validate_file_extension,
     validate_file_size,
     validate_multiple_extensions,
 )
+from .utils import create_ressource_path
 
 
 class Static:
@@ -25,11 +29,11 @@ class Static:
 
     # possible articles
     article_choices = [
-        ("keiner", "keiner"),
-        ("der", "der"),
-        ("das", "das"),
-        ("die", "die"),
-        ("die (Plural)", "die (Plural)"),
+        (0, "keiner"),
+        (1, "der"),
+        (2, "die"),
+        (3, "das"),
+        (4, "die (Plural)"),
     ]
 
     # possible word types
@@ -40,26 +44,17 @@ class Static:
     # maximum (width, height) of images
     img_size = (1024, 768)
 
-    # letters that should be converted
-    replace_dict = {
-        "Ä":"Ae",
-        "Ö":"Oe",
-        "Ü":"Ue",
-        "ä":"ae",
-        "ö":"oe",
-        "ü":"ue",
-        "ß":"ss",
-    }
+    # super admin group name
+    admin_group = "Lunes"
+
+    # default group name
+    default_group_name = None
 
 def convert_umlaute_images(instance, filename):
-    for i,j in Static.replace_dict.items():
-        filename = filename.replace(i,j)
-    return os.path.join('images/', filename)
+    return create_ressource_path("images", filename)
 
 def convert_umlaute_audio(instance, filename):
-    for i,j in Static.replace_dict.items():
-        filename = filename.replace(i,j)
-    return os.path.join('audio/', filename)
+    return create_ressource_path("audio", filename)
 
 class Discipline(OrderedModel):
     """
@@ -74,8 +69,12 @@ class Discipline(OrderedModel):
     description = models.CharField(
         max_length=255, blank=True, verbose_name=_("description")
     )
-    icon = models.ImageField(upload_to=convert_umlaute_images, blank=True, verbose_name=_("icon"))
-    created_by = models.ForeignKey(Group, on_delete=CASCADE, null=True, blank=True, verbose_name=_("created by"))
+    icon = models.ImageField(
+        upload_to=convert_umlaute_images, blank=True, verbose_name=_("icon")
+    )
+    created_by = models.ForeignKey(
+        Group, on_delete=CASCADE, null=True, blank=True, verbose_name=_("created by")
+    )
     creator_is_admin = models.BooleanField(default=True, verbose_name=_("admin"))
 
     def __str__(self):
@@ -104,8 +103,7 @@ class Document(models.Model):
         verbose_name=_("word type"),
     )
     word = models.CharField(max_length=255, verbose_name=_("word"))
-    article = models.CharField(
-        max_length=255,
+    article = models.IntegerField(
         choices=Static.article_choices,
         default="",
         verbose_name=_("article"),
@@ -121,8 +119,12 @@ class Document(models.Model):
         null=True,
         verbose_name=_("audio"),
     )
-    creation_date = models.DateTimeField(auto_now_add=True, verbose_name=_("creation date"))
-    created_by = models.CharField(max_length=255, null=True, blank=True, verbose_name=_("created by"))
+    creation_date = models.DateTimeField(
+        auto_now_add=True, verbose_name=_("creation date")
+    )
+    created_by = models.CharField(
+        max_length=255, null=True, blank=True, verbose_name=_("created by")
+    )
     creator_is_admin = models.BooleanField(default=True, verbose_name=_("admin"))
 
     @property
@@ -159,7 +161,7 @@ class Document(models.Model):
         super(Document, self).save(*args, **kwarg)
 
     def __str__(self):
-        return "(" + self.article + ") " + self.word
+        return "(" + self.get_article_display() + ") " + self.word
 
     class Meta:
         """
@@ -183,12 +185,16 @@ class TrainingSet(OrderedModel):  # pylint: disable=R0903
     description = models.CharField(
         max_length=255, blank=True, verbose_name=_("description")
     )
-    icon = models.ImageField(upload_to=convert_umlaute_images, blank=True, verbose_name=_("icon"))
+    icon = models.ImageField(
+        upload_to=convert_umlaute_images, blank=True, verbose_name=_("icon")
+    )
     documents = models.ManyToManyField(Document, related_name="training_sets")
     discipline = models.ManyToManyField(Discipline, related_name="training_sets")
-    created_by = models.ForeignKey(Group, on_delete=CASCADE, null=True, blank=True, verbose_name=_("created by"))
+    created_by = models.ForeignKey(
+        Group, on_delete=CASCADE, null=True, blank=True, verbose_name=_("created by")
+    )
     creator_is_admin = models.BooleanField(default=True, verbose_name=_("admin"))
-    
+
     def __str__(self):
         return self.title
 
@@ -211,6 +217,13 @@ class DocumentImage(models.Model):
     document = models.ForeignKey(
         Document, on_delete=models.CASCADE, related_name="document_image"
     )
+    confirmed = models.BooleanField(default=True, verbose_name="confirmed")
+
+    def image_tag(self):
+        if self.image:
+            return mark_safe('<img src="/media/%s" width="330" height="240"/>' % (self.image))
+        return ""
+    image_tag.short_description = ''
 
     def save_original_img(self):
         """
@@ -288,8 +301,7 @@ class AlternativeWord(models.Model):
 
     id = models.AutoField(primary_key=True)
     alt_word = models.CharField(max_length=255, verbose_name=_("alternative word"))
-    article = models.CharField(
-        max_length=255,
+    article = models.IntegerField(
         choices=Static.article_choices,
         default="",
         verbose_name=_("article"),
@@ -309,3 +321,13 @@ class AlternativeWord(models.Model):
 
         verbose_name = _("alternative word")
         verbose_name_plural = _("alternative words")
+
+
+# automatically adds a group when creating a new user if group name given in Static module
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if Static.default_group_name:
+        default_group = Group.objects.filter(name=Static.default_group_name)
+    if not created or not default_group:
+        return False
+    instance.groups.add(Group.objects.get(name=Static.default_group_name))

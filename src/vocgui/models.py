@@ -19,7 +19,7 @@ from .validators import (
     validate_file_size,
     validate_multiple_extensions,
 )
-from .utils import create_ressource_path
+from .utils import create_ressource_path, document_to_string
 
 
 class Static:
@@ -164,7 +164,7 @@ class Document(models.Model):
         super(Document, self).save(*args, **kwarg)
 
     def __str__(self):
-        return "(" + self.get_article_display() + ") " + self.word
+        return document_to_string(self)
 
     class Meta:
         """
@@ -224,9 +224,10 @@ class DocumentImage(models.Model):
 
     def image_tag(self):
         if self.image and self.image.storage.exists(self.image.name):
-            return mark_safe(
-                '<img src="/media/%s" width="330" height="240"/>' % (self.image)
-            )
+            if ".png" in self.image.name or ".jpg" in self.image.name:
+                return mark_safe(
+                    '<img src="/media/%s" width="330" height="240"/>' % (self.image)
+                )
         return ""
 
     image_tag.short_description = ""
@@ -270,8 +271,11 @@ class DocumentImage(models.Model):
             img_cropped.width > Static.img_size[0]
             or img_cropped.height > Static.img_size[1]
         ):
-            max_size = (Static.img_size[0], Static.img_size[1])
-            img_cropped.thumbnail(max_size)
+            img_cropped.thumbnail(Static.img_size)
+        elif (img_cropped.width / img_cropped.height) > (Static.img_size[0] / Static.img_size[1]):
+            img_cropped = img_cropped.resize((Static.img_size[0], round((Static.img_size[0] / img_cropped.width) * img_cropped.height)))
+        else:
+            img_cropped = img_cropped.resize((round(Static.img_size[1] / img_cropped.height) * img_cropped.width, Static.img_size[1]))
 
         offset = (
             ((img_blurr.width - img_cropped.width) // 2),
